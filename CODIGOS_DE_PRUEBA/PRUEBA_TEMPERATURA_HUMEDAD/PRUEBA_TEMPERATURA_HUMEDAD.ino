@@ -34,5 +34,5 @@ void loop() {
   Serial.println(" *C");
 
   Serial.println();
-  delay(500);
+  delay(100);
 }
