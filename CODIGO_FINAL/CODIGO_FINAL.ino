@@ -39,9 +39,14 @@ ld2410 radar;
 #define LED_2 7
 
 //Declaración de ID y Token del chat de Telegram
-#define BOTtoken "8884119382:AAHkfGuicM97rFiye-yv45BBiEYcfp8zp-s"
-#define CHAT_ID "7569009265"
+#define BOTtoken "8919782216:AAHZLJSktuKHWctRGJ7UylZtetMbH0j7KOw"
+#define CHAT_ID "6195445889"
 
+enum Estados{
+  MIDIENDO,
+  EVALUANDO
+};
+Estados estadoSensado = MIDIENDO;
 TaskHandle_t TareaSensado;
 TaskHandle_t TareaComunicacion;
 
@@ -68,6 +73,7 @@ void mostrarMensajes(String mensaje);
 void inicializarPerifericos();
 void configurarTelegram();
 void enviarTelegram(String mensaje);
+String leerTelegram();
 void enviarMQTT();
 void guardarEEPROM();
 void configurarValores();
@@ -129,4 +135,45 @@ void codigoSensado(void *parameter){
     case EVALUANDO:
       break;
   }
+}
+
+void codigoComunicacion(void *parameter){
+
+}
+
+float medirTemp(){
+  return bmp.readTemperature();
+}
+
+float medirCorriente(){
+  return ina219.getCurrent_mA();
+}
+
+bool medirPresencia(){
+  radar.read();
+
+  static unsigned long tiempoAnterior = 0;
+  static bool presencia = false;
+
+  if(millis() - tiempoAnterior >= 500){
+    tiempoAnterior = millis();
+
+    if(radar.isConnected()){
+      presencia = radar.presenceDetected();
+    }
+  }
+
+  return presencia;
+}
+
+float medirLuz(){
+  return map(analogRead(LDR),0,4095,0,100);
+}
+
+float medirGas(){
+  return map(analogRead(GAS),0,4095,0,100);
+}
+
+void enviarTelegram(String mensaje){
+  bot.sendMessage(CHAT_ID, mensaje);
 }
