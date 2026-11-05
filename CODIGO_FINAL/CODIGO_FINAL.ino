@@ -138,7 +138,6 @@ void codigoSensado(void *parameter){
 }
 
 void codigoComunicacion(void *parameter){
-
 }
 
 float medirTemp(){
@@ -176,4 +175,8 @@ float medirGas(){
 
 void enviarTelegram(String mensaje){
   bot.sendMessage(CHAT_ID, mensaje);
+}
+
+String leerTelegram(){
+  
 }
