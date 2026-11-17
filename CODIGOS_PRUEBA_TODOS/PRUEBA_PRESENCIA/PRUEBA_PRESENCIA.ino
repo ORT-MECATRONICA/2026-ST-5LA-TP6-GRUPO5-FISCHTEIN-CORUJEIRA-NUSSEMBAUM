@@ -5,12 +5,13 @@
 ld2410 radar;
 
 #define RADAR_SERIAL Serial1
-#define RX 19
-#define TX 25
+#define RX 16
+#define TX 17
 unsigned long tiempoAnterior = 0;
 
 void setup() {
   Serial.begin(115200);
+  delay(1000);
   while (!Serial)
     ;
   RADAR_SERIAL.begin(256000, SERIAL_8N1,RX,TX);

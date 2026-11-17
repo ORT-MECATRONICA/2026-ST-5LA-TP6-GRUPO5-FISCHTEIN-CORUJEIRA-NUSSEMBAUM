@@ -4,13 +4,13 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP280.h>
 
-Adafruit_BMP280 bmp(&Wire1);  // I2C
+Adafruit_BMP280 bmp;  // I2C
 
 void setup() {
   Serial.begin(115200);
-  Serial.println(F("BMP280 test"));
+  Serial.println("BMP280 test");
 
-  Wire1.begin(18,19);
+  Wire1.begin(21,22);
 
   // Change to 0x76 if your sensor uses that address
   if (!bmp.begin(0x76,BMP280_CHIPID)) {
