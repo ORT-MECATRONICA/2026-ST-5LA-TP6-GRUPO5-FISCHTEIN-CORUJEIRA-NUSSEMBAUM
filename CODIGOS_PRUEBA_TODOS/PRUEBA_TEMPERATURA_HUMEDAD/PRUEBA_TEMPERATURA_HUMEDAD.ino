@@ -13,10 +13,9 @@ void setup() {
   Wire1.begin(21,22);
 
   // Change to 0x76 if your sensor uses that address
-  if (!bmp.begin(0x76,BMP280_CHIPID)) {
+  while (!bmp.begin(0x76,BMP280_CHIPID)) {
     Serial.println(F("Could not find a valid BMP280 sensor, check wiring!"));
-    while (1)
-      ;
+    delay(500);
   }
 
   bmp.setSampling(
