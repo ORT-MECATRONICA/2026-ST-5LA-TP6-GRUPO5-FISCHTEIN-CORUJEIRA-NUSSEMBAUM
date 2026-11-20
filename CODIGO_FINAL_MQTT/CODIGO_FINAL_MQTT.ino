@@ -1,5 +1,6 @@
+#include <LiquidCrystal_PCF8574.h>
 #include <Arduino.h>
-#include <LiquidCrystal_I2C.h>
+
 #include <ld2410.h>
 #include <Adafruit_INA219.h>
 #include <Wire.h>
@@ -9,19 +10,17 @@
 #include <WiFi.h>
 #include <time.h>
 #include <WiFiClientSecure.h>
-#include <PubSubClient.h> 
+#include <PubSubClient.h>
 #include <UniversalTelegramBot.h>
 
-// ================= CONFIGURACIÓN WIFI Y DISPOSITIVO =================
 const char* ssid = "PACE";
 const char* password = "pace2026";
 
 const uint8_t name_device = 115;
 
-// ================= INSTANCIAS DE SENSORES Y PERIFÉRICOS =================
-Adafruit_BMP280 bmp(&Wire1);
+Adafruit_BMP280 bmp;
 Adafruit_INA219 ina219;
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_PCF8574 lcd(0x27);
 ld2410 radar;
 
 #define RADAR_SERIAL Serial1
@@ -29,14 +28,19 @@ ld2410 radar;
 #define TX 17
 
 // Pines originales restaurados
-#define LDR 3
+#define LDR 23
 #define GAS_1 2
 #define GAS_2 4
 
-#define LED_1 26
-#define LED_2 27
+#define LED_NORMAL 26
+#define LED_ALERTA 27
 
-// ================= CONFIGURACIÓN TELEGRAM =================
+#define BOTON_1 32
+#define BOTON_2 33
+#define BOTON_3 34
+#define BOTON_4 35
+
+
 #define BOTtoken "8919782216:AAHZLJSktuKHWctRGJ7UylZtetMbH0j7KOw"
 #define CHAT_ID "6195445889"
 #define TASA_TELEGRAM 5000
@@ -45,19 +49,28 @@ unsigned long lastTelegramCheck = 0;
 WiFiClientSecure clientTelegram;
 UniversalTelegramBot bot(BOTtoken, clientTelegram);
 
-// ================= TIMERS Y NTP PARA MQTT =================
-unsigned long now = 0;
-unsigned long lastMeasure1 = 0; 
-unsigned long lastMeasure2 = 0; 
+typedef enum {
+  PANTALLA_1,
+  PANTALLA_2,
+  PANTALLA_3,
+  PANTALLA_4
+} Pantalla;
 
-const unsigned long interval_envio = 30000; 
-const unsigned long interval_leeo = 60000;  
+Pantalla pantallaActual = PANTALLA_1;
+
+
+unsigned long now = 0;
+unsigned long lastMeasure1 = 0;
+unsigned long lastMeasure2 = 0;
+
+const unsigned long interval_envio = 30000;
+const unsigned long interval_leeo = 60000;
 
 const char* ntpServer = "south-america.pool.ntp.org";
 const long gmtOffset_sec = -10800;
 const int daylightOffset_sec = 0;
 
-// ================= COLA CIRCULAR (STRUCT) Y MQTT =================
+
 int indice_entra = 0;
 int indice_saca = 0;
 bool flag_vacio = 1;
@@ -89,7 +102,7 @@ estructura aux2;
 WiFiClientSecure espClient;
 PubSubClient mqttClient(espClient);
 
-// ================= VARIABLES DE ESTADO Y SENSADO =================
+
 TaskHandle_t TareaSensado;
 TaskHandle_t TareaComunicacion;
 
@@ -121,7 +134,6 @@ bool alertaLuzEnviada = false;
 bool alertaGas1Enviada = false;
 bool alertaGas2Enviada = false;
 
-// ================= PROTOTIPOS DE FUNCIONES =================
 float medirTemp();
 float medirPresion();
 float medirCorriente();
@@ -130,8 +142,8 @@ float medirLuz();
 float medirGas1();
 float medirGas2();
 
-void codigoSensado(void *parameter);
-void codigoComunicacion(void *parameter);
+void codigoSensado(void* parameter);
+void codigoComunicacion(void* parameter);
 void handleNewMessages(int numNewMessages);
 
 void inicializarPerifericos();
@@ -142,28 +154,40 @@ void connectToMqtt();
 void fun_saca();
 void fun_entra();
 void fun_envio_mqtt();
+void mostrar(Pantalla pantalla);
 
-// ================= SETUP & LOOP =================
 void setup() {
   inicializarPerifericos();
 }
 
 void loop() {
-  vTaskDelay(pdMS_TO_TICKS(1000));
+  if (tempActual >= tempUmbral || gas1 >= gas1Umbral || gas2 >= gas2Umbral || corriente >= corrienteUmbral || presencia || luz >= luzUmbral || presionActual >= presionUmbral) {
+    digitalWrite(LED_ALERTA, HIGH);
+    digitalWrite(LED_NORMAL, LOW);
+  } else {
+    digitalWrite(LED_NORMAL, HIGH);
+    digitalWrite(LED_ALERTA, LOW);
+  }
+  mostrar(pantallaActual);
 }
 
-// ================= INICIALIZACIÓN =================
 void inicializarPerifericos() {
   Serial.begin(115200);
   pinMode(GAS_1, INPUT);
   pinMode(GAS_2, INPUT);
   pinMode(LDR, INPUT);
-  pinMode(LED_1, OUTPUT);
-  pinMode(LED_2, OUTPUT);
+  pinMode(LED_NORMAL, OUTPUT);
+  pinMode(LED_ALERTA, OUTPUT);
+  pinMode(BOTON_1, INPUT);
+  pinMode(BOTON_2, INPUT);
+  pinMode(BOTON_3, INPUT);
+  pinMode(BOTON_4, INPUT);
 
-  Wire.begin(21, 22); 
-  lcd.init();
-  lcd.backlight();
+  Wire.begin(21, 22);
+  Wire1.begin(19, 13);
+  lcd.begin(16, 2, Wire1);
+  lcd.setBacklight(255);
+
   lcd.setCursor(0, 0);
   lcd.print("Iniciando...");
 
@@ -177,7 +201,6 @@ void inicializarPerifericos() {
   }
   Serial.println("Sensor de corriente inicializado");
 
-  Wire1.begin(18, 19); 
   while (!bmp.begin(0x76, BMP280_CHIPID)) {
     Serial.println("Iniciando sensor BMP280...");
     delay(500);
@@ -188,23 +211,22 @@ void inicializarPerifericos() {
   connectToWifi();
 
   clientTelegram.setCACert(TELEGRAM_CERTIFICATE_ROOT);
-  espClient.setInsecure(); 
+  espClient.setInsecure();
   setupmqtt();
 
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
-  xTaskCreatePinnedToCore(codigoSensado, "sensado", 10000, NULL, 1, &TareaSensado, 0);
-  xTaskCreatePinnedToCore(codigoComunicacion, "comunicacion", 10000, NULL, 1, &TareaComunicacion, 1);
+  xTaskCreatePinnedToCore(codigoSensado, "sensado", 10000, NULL, 1, &TareaSensado, 1);
+  xTaskCreatePinnedToCore(codigoComunicacion, "comunicacion", 10000, NULL, 1, &TareaComunicacion, 0);
 
   bot.sendMessage(CHAT_ID, "Bot iniciado correctamente", "");
   lastTelegramCheck = millis();
   lastMeasure1 = millis();
   lastMeasure2 = millis();
   lcd.clear();
-  lcd.print("Sistema Online");
+  pantallaActual = PANTALLA_1;
 }
 
-// ================= TAREAS FREERTOS =================
 void codigoSensado(void* parameter) {
   while (1) {
     tempActual = medirTemp();
@@ -214,7 +236,8 @@ void codigoSensado(void* parameter) {
     luz = medirLuz();
     gas1 = medirGas1();
     gas2 = medirGas2();
-    
+
+
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
@@ -227,7 +250,7 @@ void codigoComunicacion(void* parameter) {
     if (!mqttClient.connected()) {
       connectToMqtt();
     }
-    mqttClient.loop(); 
+    mqttClient.loop();
 
     if (tempActual >= tempUmbral && !alertaTempEnviada) {
       enviarTelegram("ALERTA! TEMPERATURA ELEVADA: " + String(tempActual) + " C");
@@ -290,18 +313,17 @@ void codigoComunicacion(void* parameter) {
     now = millis();
     if (now - lastMeasure2 >= interval_leeo) {
       lastMeasure2 = now;
-      fun_entra(); 
+      fun_entra();
     }
     if (now - lastMeasure1 >= interval_envio) {
       lastMeasure1 = now;
-      fun_envio_mqtt(); 
+      fun_envio_mqtt();
     }
 
-    vTaskDelay(pdMS_TO_TICKS(50)); 
+    //vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
-// ================= FUNCIONES DE LECTURA DE SENSORES =================
 float medirTemp() {
   return bmp.readTemperature();
 }
@@ -340,7 +362,6 @@ float medirGas2() {
   return map(analogRead(GAS_2), 0, 4095, 0, 99);
 }
 
-// ================= FUNCIONES DE TELEGRAM =================
 void enviarTelegram(String mensaje) {
   bot.sendMessage(CHAT_ID, mensaje, "");
 }
@@ -352,25 +373,24 @@ void handleNewMessages(int numNewMessages) {
 
     if (text == "/state") {
       String msg = "Temperatura: " + String(tempActual) + " C\n"
-                 + "Presion: " + String(presionActual) + " hPa\n"
-                 + "Presencia: " + (presencia ? "Detectada\n" : "No detectada\n")
-                 + "Corriente: " + String(corriente) + " mA\n"
-                 + "Luz: " + String(luz) + "%\n"
-                 + "Gas 1: " + String(gas1) + "%\n"
-                 + "Gas 2: " + String(gas2) + "%";
+                   + "Presion: " + String(presionActual) + " hPa\n"
+                   + "Presencia: " + (presencia ? "Detectada\n" : "No detectada\n")
+                   + "Corriente: " + String(corriente) + " mA\n"
+                   + "Luz: " + String(luz) + "%\n"
+                   + "Gas 1: " + String(gas1) + "%\n"
+                   + "Gas 2: " + String(gas2) + "%";
       bot.sendMessage(chat_id, msg, "");
     }
   }
 }
 
-// ================= FUNCIONES MQTT Y COLA DE DATOS =================
 void setupmqtt() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 }
 
 void fun_entra() {
   time_t now_ntp;
-  time(&now_ntp); 
+  time(&now_ntp);
 
   datos_struct[indice_entra].time = (long)now_ntp;
   datos_struct[indice_entra].T1 = tempActual;
@@ -380,9 +400,7 @@ void fun_entra() {
   datos_struct[indice_entra].G2 = gas2;
   datos_struct[indice_entra].cor = corriente;
   datos_struct[indice_entra].pre = presencia;
-  datos_struct[indice_entra].Alarma = (alertaTempEnviada || alertaPresionEnviada || 
-                                       alertaPresenciaEnviada || alertaCorrienteEnviada || 
-                                       alertaLuzEnviada || alertaGas1Enviada || alertaGas2Enviada);
+  datos_struct[indice_entra].Alarma = (alertaTempEnviada || alertaPresionEnviada || alertaPresenciaEnviada || alertaCorrienteEnviada || alertaLuzEnviada || alertaGas1Enviada || alertaGas2Enviada);
 
   if (indice_entra >= (valor_max_struct - 1)) {
     indice_entra = 0;
@@ -395,7 +413,7 @@ void fun_entra() {
 
 void fun_saca() {
   if (indice_saca != indice_entra) {
-    aux2 = datos_struct[indice_saca]; 
+    aux2 = datos_struct[indice_saca];
     flag_vacio = 0;
 
     if (indice_saca >= (valor_max_struct - 1)) {
@@ -413,16 +431,16 @@ void fun_saca() {
 void fun_envio_mqtt() {
   fun_saca();
   if (flag_vacio == 0) {
-    snprintf(mqtt_payload, sizeof(mqtt_payload), 
-             "%d&%ld&%.2f&%.2f&%.2f&%.2f&%.2f&%.2f&%u&%u", 
-             name_device, aux2.time, aux2.T1, aux2.P1, aux2.luz, 
+    snprintf(mqtt_payload, sizeof(mqtt_payload),
+             "%d&%ld&%.2f&%.2f&%.2f&%.2f&%.2f&%.2f&%u&%u",
+             name_device, aux2.time, aux2.T1, aux2.P1, aux2.luz,
              aux2.G1, aux2.G2, aux2.cor, aux2.pre, aux2.Alarma);
 
     Serial.print("Publish message: ");
     Serial.println(mqtt_payload);
 
     mqttClient.publish(MQTT_PUB, mqtt_payload);
-    memset(&aux2, 0, sizeof(aux2)); 
+    memset(&aux2, 0, sizeof(aux2));
   } else {
     Serial.println("No hay valores nuevos en cola");
   }
@@ -443,12 +461,85 @@ void connectToMqtt() {
   if (!mqttClient.connected()) {
     Serial.print("Conectando a MQTT (EMQX Cloud SSL)...");
     String clientId = "ESP32_Grupo_" + String(name_device) + "_" + WiFi.macAddress();
-    
+
     if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
       Serial.println(" ¡Conectado a MQTT!");
     } else {
       Serial.print(" Fallo conexion, rc=");
       Serial.println(mqttClient.state());
     }
+  }
+}
+
+void mostrar(Pantalla pantalla) {
+  switch (pantalla) {
+    case PANTALLA_1:
+      lcd.setCursor(0, 0);
+      lcd.print("Temperatura: " + String(tempActual) + " °C");
+      lcd.setCursor(0, 1);
+      lcd.print("Presion: " + String(presionActual) + " hPa");
+
+      if (digitalRead(BOTON_2) == LOW) {
+        pantallaActual = PANTALLA_2;
+      } else if (digitalRead(BOTON_3) == LOW) {
+        pantallaActual = PANTALLA_3;
+      } else if (digitalRead(BOTON_4) == LOW) {
+        pantallaActual = PANTALLA_4;
+      }
+      break;
+
+    case PANTALLA_2:
+      lcd.setCursor(0, 0);
+      lcd.print("Gas 1: " + String(gas1) + "%");
+      lcd.setCursor(0, 1);
+      lcd.print("Gas 2: " + String(gas2) + "%");
+      if (digitalRead(BOTON_1) == LOW) {
+        pantallaActual = PANTALLA_1;
+      } else if (digitalRead(BOTON_3) == LOW) {
+        pantallaActual = PANTALLA_3;
+      } else if (digitalRead(BOTON_4) == LOW) {
+        pantallaActual = PANTALLA_4;
+      }
+      break;
+
+    case PANTALLA_3:
+      lcd.setCursor(0, 0);
+      lcd.print("Luz: " + String(luz) + "%");
+      lcd.setCursor(0, 1);
+      lcd.print("Presencia: " + String(presencia ? "si" : "no"));
+
+      if (digitalRead(BOTON_1) == LOW) {
+        pantallaActual = PANTALLA_1;
+      } else if (digitalRead(BOTON_2) == LOW) {
+        pantallaActual = PANTALLA_2;
+      } else if (digitalRead(BOTON_4) == LOW) {
+        pantallaActual = PANTALLA_4;
+      }
+      break;
+
+    case PANTALLA_4:
+      struct tm timeinfo;
+      char hora[40];
+
+      if (!getLocalTime(&timeinfo)) {
+        lcd.setCursor(0, 0);
+        lcd.print("No se pudo obtener la hora");
+      } else {
+        strftime(hora, sizeof(hora), "%A, %B %d %Y %H:%M:%S", &timeinfo);
+        lcd.setCursor(0,0);
+        lcd.print("Hora: " + String(hora));
+      }
+
+      lcd.setCursor(0, 1);
+      lcd.print("Corriente: " + String(corriente) + " mA");
+
+      if (digitalRead(BOTON_1) == LOW) {
+        pantallaActual = PANTALLA_1;
+      } else if (digitalRead(BOTON_2) == LOW) {
+        pantallaActual = PANTALLA_2;
+      } else if (digitalRead(BOTON_3) == LOW) {
+        pantallaActual = PANTALLA_3;
+      }
+      break;
   }
 }

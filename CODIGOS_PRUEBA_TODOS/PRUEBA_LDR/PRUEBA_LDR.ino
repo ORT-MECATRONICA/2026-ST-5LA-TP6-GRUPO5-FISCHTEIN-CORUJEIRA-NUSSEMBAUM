@@ -1,5 +1,5 @@
 //Grupo 5: Sol Corujeira, Benjamin Fischtein y Lara Nussembaum
-#define LDR 3
+#define LDR 23
 
 void setup() {
   Serial.begin(115200);
