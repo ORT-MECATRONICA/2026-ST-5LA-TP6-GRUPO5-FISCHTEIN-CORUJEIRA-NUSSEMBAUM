@@ -28,7 +28,7 @@ ld2410 radar;
 #define TX 17
 
 // Pines originales restaurados
-#define LDR 23
+#define LDR 25
 #define GAS_1 2
 #define GAS_2 4
 

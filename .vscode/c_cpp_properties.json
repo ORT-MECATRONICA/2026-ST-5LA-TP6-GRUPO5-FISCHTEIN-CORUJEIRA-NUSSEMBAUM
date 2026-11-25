@@ -1,0 +1,38 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "ESP32",
+      "compilerPath": "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/2601/bin/xtensa-esp32-elf-g++.exe",
+      "cStandard": "c11",
+      "cppStandard": "gnu++11",
+      "intelliSenseMode": "gcc-x64",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "C:/Users/Lenovo/Documents/Arduino/libraries/**",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/libraries/**",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2/cores/esp32",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2/libraries/**",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2/variants/**",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2/variants/esp32",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32/include/**",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32/include/freertos/FreeRTOS-Kernel/include",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32/include/freertos/FreeRTOS-Kernel/include/freertos",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32/include/esp_common/include",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32/include/esp_rom/include",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32/include/newlib/platform_include",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32/include/soc/esp32/include",
+        "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/tools/esp32-arduino-libs/idf-release_v5.5-07e9bf49-v1/esp32/include/hal/esp32/include"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}",
+          "C:/Users/Lenovo/Documents/Arduino/libraries",
+          "C:/Users/Lenovo/AppData/Local/Arduino15/libraries",
+          "C:/Users/Lenovo/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2"
+        ],
+        "limitSymbolsToIncludedHeaders": false
+      }
+    }
+  ]
+}

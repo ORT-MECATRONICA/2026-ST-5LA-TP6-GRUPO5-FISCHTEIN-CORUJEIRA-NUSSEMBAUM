@@ -1,5 +1,5 @@
 //Grupo 5: Sol Corujeira, Benjamin Fischtein y Lara Nussembaum
-#define LDR 23
+#define LDR 25
 
 void setup() {
   Serial.begin(115200);
@@ -7,6 +7,6 @@ void setup() {
 }
 
 void loop() {
-  int valor = map(analogRead(LDR),0,4095,0,100);
+  int valor = analogRead(LDR);
   Serial.println(valor);
 }
