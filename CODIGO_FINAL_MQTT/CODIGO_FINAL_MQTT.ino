@@ -28,7 +28,7 @@ ld2410 radar;
 #define TX 17
 
 // Pines originales restaurados
-#define LDR 25
+#define LDR 3
 #define GAS_1 2
 #define GAS_2 4
 
@@ -40,6 +40,8 @@ ld2410 radar;
 #define BOTON_3 34
 #define BOTON_4 35
 
+const uint8_t LCD_COLS = 16;
+const unsigned long DEBOUNCE_MS = 200;
 
 #define BOTtoken "8919782216:AAHZLJSktuKHWctRGJ7UylZtetMbH0j7KOw"
 #define CHAT_ID "6195445889"
@@ -107,7 +109,7 @@ TaskHandle_t TareaSensado;
 TaskHandle_t TareaComunicacion;
 
 volatile float tempActual = 0;
-float tempUmbral = 22;
+float tempUmbral = 31;
 
 volatile float presionActual = 0;
 float presionUmbral = 1025;
@@ -184,7 +186,7 @@ void inicializarPerifericos() {
   pinMode(BOTON_4, INPUT);
 
   Wire.begin(21, 22);
-  Wire1.begin(19, 13);
+  Wire1.begin(13, 19);
   lcd.begin(16, 2, Wire1);
   lcd.setBacklight(255);
 
@@ -216,15 +218,17 @@ void inicializarPerifericos() {
 
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
-  xTaskCreatePinnedToCore(codigoSensado, "sensado", 10000, NULL, 1, &TareaSensado, 1);
-  xTaskCreatePinnedToCore(codigoComunicacion, "comunicacion", 10000, NULL, 1, &TareaComunicacion, 0);
-
   bot.sendMessage(CHAT_ID, "Bot iniciado correctamente", "");
+
   lastTelegramCheck = millis();
   lastMeasure1 = millis();
   lastMeasure2 = millis();
   lcd.clear();
   pantallaActual = PANTALLA_1;
+
+
+  xTaskCreatePinnedToCore(codigoSensado, "sensado", 10000, NULL, 1, &TareaSensado, 1);
+  xTaskCreatePinnedToCore(codigoComunicacion, "comunicacion", 10000, NULL, 1, &TareaComunicacion, 0);
 }
 
 void codigoSensado(void* parameter) {
@@ -252,63 +256,65 @@ void codigoComunicacion(void* parameter) {
     }
     mqttClient.loop();
 
-    if (tempActual >= tempUmbral && !alertaTempEnviada) {
-      enviarTelegram("ALERTA! TEMPERATURA ELEVADA: " + String(tempActual) + " C");
-      alertaTempEnviada = true;
-    } else if (tempActual < tempUmbral - 1.0) {
-      alertaTempEnviada = false;
-    }
-
-    if (presionActual >= presionUmbral && !alertaPresionEnviada) {
-      enviarTelegram("ALERTA! PRESION ELEVADA: " + String(presionActual) + " hPa");
-      alertaPresionEnviada = true;
-    } else if (presionActual < presionUmbral - 2.0) {
-      alertaPresionEnviada = false;
-    }
-
-    if (presencia && !alertaPresenciaEnviada) {
-      enviarTelegram("ALERTA! PRESENCIA DETECTADA");
-      alertaPresenciaEnviada = true;
-    } else if (!presencia) {
-      alertaPresenciaEnviada = false;
-    }
-
-    if (corriente >= corrienteUmbral && !alertaCorrienteEnviada) {
-      enviarTelegram("ALERTA! CORRIENTE ELEVADA: " + String(corriente) + " mA");
-      alertaCorrienteEnviada = true;
-    } else if (corriente < corrienteUmbral - 2.0) {
-      alertaCorrienteEnviada = false;
-    }
-
-    if (luz >= luzUmbral && !alertaLuzEnviada) {
-      enviarTelegram("ALERTA! LUZ ELEVADA: " + String(luz) + "%");
-      alertaLuzEnviada = true;
-    } else if (luz < luzUmbral - 5.0) {
-      alertaLuzEnviada = false;
-    }
-
-    if (gas1 >= gas1Umbral && !alertaGas1Enviada) {
-      enviarTelegram("ALERTA! GAS 1 ELEVADO: " + String(gas1) + "%");
-      alertaGas1Enviada = true;
-    } else if (gas1 < gas1Umbral - 5.0) {
-      alertaGas1Enviada = false;
-    }
-
-    if (gas2 >= gas2Umbral && !alertaGas2Enviada) {
-      enviarTelegram("ALERTA! GAS 2 ELEVADO: " + String(gas2) + "%");
-      alertaGas2Enviada = true;
-    } else if (gas2 < gas2Umbral - 5.0) {
-      alertaGas2Enviada = false;
-    }
-
     if (millis() - lastTelegramCheck >= TASA_TELEGRAM) {
-      int nuevosMensajes = bot.getUpdates(bot.last_message_received + 1);
-      while (nuevosMensajes) {
-        handleNewMessages(nuevosMensajes);
-        nuevosMensajes = bot.getUpdates(bot.last_message_received + 1);
+      if (tempActual >= tempUmbral && !alertaTempEnviada) {
+        enviarTelegram("ALERTA! TEMPERATURA ELEVADA: " + String(tempActual) + " C");
+        alertaTempEnviada = true;
+      } else if (tempActual < tempUmbral - 1.0) {
+        alertaTempEnviada = false;
+      }
+
+      if (presionActual >= presionUmbral && !alertaPresionEnviada) {
+        enviarTelegram("ALERTA! PRESION ELEVADA: " + String(presionActual) + " hPa");
+        alertaPresionEnviada = true;
+      } else if (presionActual < presionUmbral - 2.0) {
+        alertaPresionEnviada = false;
+      }
+
+      if (presencia && !alertaPresenciaEnviada) {
+        enviarTelegram("ALERTA! PRESENCIA DETECTADA");
+        alertaPresenciaEnviada = true;
+      } else if (!presencia) {
+        alertaPresenciaEnviada = false;
+      }
+
+      if (corriente >= corrienteUmbral && !alertaCorrienteEnviada) {
+        enviarTelegram("ALERTA! CORRIENTE ELEVADA: " + String(corriente) + " mA");
+        alertaCorrienteEnviada = true;
+      } else if (corriente < corrienteUmbral - 2.0) {
+        alertaCorrienteEnviada = false;
+      }
+
+      if (luz >= luzUmbral && !alertaLuzEnviada) {
+        enviarTelegram("ALERTA! LUZ ELEVADA: " + String(luz) + "%");
+        alertaLuzEnviada = true;
+      } else if (luz < luzUmbral - 5.0) {
+        alertaLuzEnviada = false;
+      }
+
+      if (gas1 >= gas1Umbral && !alertaGas1Enviada) {
+        enviarTelegram("ALERTA! GAS 1 ELEVADO: " + String(gas1) + "%");
+        alertaGas1Enviada = true;
+      } else if (gas1 < gas1Umbral - 5.0) {
+        alertaGas1Enviada = false;
+      }
+
+      if (gas2 >= gas2Umbral && !alertaGas2Enviada) {
+        enviarTelegram("ALERTA! GAS 2 ELEVADO: " + String(gas2) + "%");
+        alertaGas2Enviada = true;
+      } else if (gas2 < gas2Umbral - 5.0) {
+        alertaGas2Enviada = false;
       }
       lastTelegramCheck = millis();
     }
+
+    int nuevosMensajes = bot.getUpdates(bot.last_message_received + 1);
+    while (nuevosMensajes) {
+      handleNewMessages(nuevosMensajes);
+      nuevosMensajes = bot.getUpdates(bot.last_message_received + 1);
+    }
+
+
 
     now = millis();
     if (now - lastMeasure2 >= interval_leeo) {
@@ -320,7 +326,7 @@ void codigoComunicacion(void* parameter) {
       fun_envio_mqtt();
     }
 
-    //vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
@@ -471,75 +477,67 @@ void connectToMqtt() {
   }
 }
 
+void printLinea(uint8_t fila, String texto) {
+  if (texto.length() > LCD_COLS) {
+    texto = texto.substring(0, LCD_COLS);
+  }
+  while (texto.length() < LCD_COLS) {
+    texto += ' ';
+  }
+  lcd.setCursor(0, fila);
+  lcd.print(texto);
+}
+
+void navegar() {
+  static unsigned long ultimoCambio = 0;
+  if (millis() - ultimoCambio < DEBOUNCE_MS) return;
+
+  const int botones[4] = { BOTON_1, BOTON_2, BOTON_3, BOTON_4 };
+  const Pantalla destinos[4] = { PANTALLA_1, PANTALLA_2, PANTALLA_3, PANTALLA_4 };
+
+  for (int i = 0; i < 4; i++) {
+    if (digitalRead(botones[i]) == LOW && pantallaActual != destinos[i]) {
+      pantallaActual = destinos[i];
+      ultimoCambio = millis();
+      return;
+    }
+  }
+}
+
 void mostrar(Pantalla pantalla) {
   switch (pantalla) {
     case PANTALLA_1:
-      lcd.setCursor(0, 0);
-      lcd.print("Temperatura: " + String(tempActual) + " °C");
-      lcd.setCursor(0, 1);
-      lcd.print("Presion: " + String(presionActual) + " hPa");
-
-      if (digitalRead(BOTON_2) == LOW) {
-        pantallaActual = PANTALLA_2;
-      } else if (digitalRead(BOTON_3) == LOW) {
-        pantallaActual = PANTALLA_3;
-      } else if (digitalRead(BOTON_4) == LOW) {
-        pantallaActual = PANTALLA_4;
-      }
+      // (char)223 es el simbolo de grado en el LCD (el "°" normal no se ve)
+      printLinea(0, "Temp: " + String(tempActual) + " " + (char)223 + "C");
+      printLinea(1, "Pres:" + String(presionActual) + " hPa");
       break;
 
     case PANTALLA_2:
-      lcd.setCursor(0, 0);
-      lcd.print("Gas 1: " + String(gas1) + "%");
-      lcd.setCursor(0, 1);
-      lcd.print("Gas 2: " + String(gas2) + "%");
-      if (digitalRead(BOTON_1) == LOW) {
-        pantallaActual = PANTALLA_1;
-      } else if (digitalRead(BOTON_3) == LOW) {
-        pantallaActual = PANTALLA_3;
-      } else if (digitalRead(BOTON_4) == LOW) {
-        pantallaActual = PANTALLA_4;
-      }
+      printLinea(0, "Gas 1: " + String(gas1) + "%");
+      printLinea(1, "Gas 2: " + String(gas2) + "%");
       break;
 
     case PANTALLA_3:
-      lcd.setCursor(0, 0);
-      lcd.print("Luz: " + String(luz) + "%");
-      lcd.setCursor(0, 1);
-      lcd.print("Presencia: " + String(presencia ? "si" : "no"));
-
-      if (digitalRead(BOTON_1) == LOW) {
-        pantallaActual = PANTALLA_1;
-      } else if (digitalRead(BOTON_2) == LOW) {
-        pantallaActual = PANTALLA_2;
-      } else if (digitalRead(BOTON_4) == LOW) {
-        pantallaActual = PANTALLA_4;
-      }
+      printLinea(0, "Luz: " + String(luz) + "%");
+      printLinea(1, "Presencia: " + String(presencia ? "si" : "no"));
       break;
 
     case PANTALLA_4:
-      struct tm timeinfo;
-      char hora[40];
+      {
+        struct tm timeinfo;
+        char hora[20];
 
-      if (!getLocalTime(&timeinfo)) {
-        lcd.setCursor(0, 0);
-        lcd.print("No se pudo obtener la hora");
-      } else {
-        strftime(hora, sizeof(hora), "%A, %B %d %Y %H:%M:%S", &timeinfo);
-        lcd.setCursor(0,0);
-        lcd.print("Hora: " + String(hora));
+        // timeout corto para no bloquear el loop (por defecto espera 5 s)
+        if (!getLocalTime(&timeinfo, 50)) {
+          printLinea(0, "Sin hora (NTP)");
+        } else {
+          strftime(hora, sizeof(hora), "%d/%m %H:%M:%S", &timeinfo);  // 14 chars
+          printLinea(0, String(hora));
+        }
+        printLinea(1, "Corr:" + String(corriente) + " mA");
+        break;
       }
-
-      lcd.setCursor(0, 1);
-      lcd.print("Corriente: " + String(corriente) + " mA");
-
-      if (digitalRead(BOTON_1) == LOW) {
-        pantallaActual = PANTALLA_1;
-      } else if (digitalRead(BOTON_2) == LOW) {
-        pantallaActual = PANTALLA_2;
-      } else if (digitalRead(BOTON_3) == LOW) {
-        pantallaActual = PANTALLA_3;
-      }
-      break;
   }
+
+  navegar();
 }

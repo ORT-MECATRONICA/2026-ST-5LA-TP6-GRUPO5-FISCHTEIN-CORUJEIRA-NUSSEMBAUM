@@ -10,7 +10,7 @@ void setup() {
   Serial.begin(115200);
   Serial.println("BMP280 test");
 
-  Wire1.begin(21,22);
+  Wire.begin();
 
   // Change to 0x76 if your sensor uses that address
   while (!bmp.begin(0x76,BMP280_CHIPID)) {
