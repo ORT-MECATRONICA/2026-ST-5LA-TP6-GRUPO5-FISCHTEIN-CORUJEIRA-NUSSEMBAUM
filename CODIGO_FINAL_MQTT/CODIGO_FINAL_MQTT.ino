@@ -1,3 +1,5 @@
+//Grupo 5: Sol Corujeira, Benjamin Fischtein y Lara Nussembaum
+
 #include <LiquidCrystal_PCF8574.h>
 #include <Arduino.h>
 
@@ -23,20 +25,19 @@ Adafruit_INA219 ina219;
 LiquidCrystal_PCF8574 lcd(0x27);
 ld2410 radar;
 
-#define RADAR_SERIAL Serial1
+#define RADAR_SERIAL Serial2
 #define RX 16
 #define TX 17
 
 // Pines originales restaurados
-#define LDR 3
-#define GAS_1 2
-#define GAS_2 4
+#define LDR 32
+#define GAS_1 33
 
 #define LED_NORMAL 26
 #define LED_ALERTA 27
 
-#define BOTON_1 32
-#define BOTON_2 33
+#define BOTON_1 36
+#define BOTON_2 23
 #define BOTON_3 34
 #define BOTON_4 35
 
@@ -65,8 +66,8 @@ unsigned long now = 0;
 unsigned long lastMeasure1 = 0;
 unsigned long lastMeasure2 = 0;
 
-const unsigned long interval_envio = 30000;
-const unsigned long interval_leeo = 60000;
+const unsigned long interval_envio = 30000;  // Intervalo de envio de datos mqtt
+const unsigned long interval_leeo = 60000;   // Intervalo de lectura y guardado en la cola
 
 const char* ntpServer = "south-america.pool.ntp.org";
 const long gmtOffset_sec = -10800;
@@ -91,9 +92,9 @@ typedef struct {
   float P1;     // valor presion en hPa
   float luz;    // valor entre 0 y 99
   float G1;     // valor gas 1 entre 0 y 99
-  float G2;     // valor gas 2 entre 0 y 99
   float cor;    // valor corriente en mA
   bool pre;     // Lectura sensor de presencia
+  bool oct;     // campo extra que espera el servidor (siempre 0)
   bool Alarma;  // 1 si se supera algún umbral
 } estructura;
 
@@ -125,16 +126,12 @@ float luzUmbral = 60;
 volatile float gas1 = 0;
 float gas1Umbral = 60;
 
-volatile float gas2 = 0;
-float gas2Umbral = 60;
-
 bool alertaTempEnviada = false;
 bool alertaPresionEnviada = false;
 bool alertaPresenciaEnviada = false;
 bool alertaCorrienteEnviada = false;
 bool alertaLuzEnviada = false;
 bool alertaGas1Enviada = false;
-bool alertaGas2Enviada = false;
 
 float medirTemp();
 float medirPresion();
@@ -142,7 +139,6 @@ float medirCorriente();
 bool medirPresencia();
 float medirLuz();
 float medirGas1();
-float medirGas2();
 
 void codigoSensado(void* parameter);
 void codigoComunicacion(void* parameter);
@@ -163,7 +159,8 @@ void setup() {
 }
 
 void loop() {
-  if (tempActual >= tempUmbral || gas1 >= gas1Umbral || gas2 >= gas2Umbral || corriente >= corrienteUmbral || presencia || luz >= luzUmbral || presionActual >= presionUmbral) {
+  if (tempActual >= tempUmbral || gas1 >= gas1Umbral || corriente >= corrienteUmbral || presencia || luz >= luzUmbral || presionActual >= presionUmbral) {
+
     digitalWrite(LED_ALERTA, HIGH);
     digitalWrite(LED_NORMAL, LOW);
   } else {
@@ -176,7 +173,6 @@ void loop() {
 void inicializarPerifericos() {
   Serial.begin(115200);
   pinMode(GAS_1, INPUT);
-  pinMode(GAS_2, INPUT);
   pinMode(LDR, INPUT);
   pinMode(LED_NORMAL, OUTPUT);
   pinMode(LED_ALERTA, OUTPUT);
@@ -194,8 +190,12 @@ void inicializarPerifericos() {
   lcd.print("Iniciando...");
 
   RADAR_SERIAL.begin(256000, SERIAL_8N1, RX, TX);
-  radar.begin(RADAR_SERIAL);
-  Serial.println("Sensor de presencia inicializado");
+
+  while (!radar.begin(Serial2)) {
+    Serial.println("Conectando sensor de presencia...");
+    delay(500);
+  }
+  Serial.println("Sensor de presencia conectado correctamente");
 
   while (!ina219.begin()) {
     Serial.println("Iniciando sensor de corriente...");
@@ -228,7 +228,7 @@ void inicializarPerifericos() {
 
 
   xTaskCreatePinnedToCore(codigoSensado, "sensado", 10000, NULL, 1, &TareaSensado, 1);
-  xTaskCreatePinnedToCore(codigoComunicacion, "comunicacion", 10000, NULL, 1, &TareaComunicacion, 0);
+  xTaskCreatePinnedToCore(codigoComunicacion, "comunicacion", 16384, NULL, 1, &TareaComunicacion, 0);
 }
 
 void codigoSensado(void* parameter) {
@@ -239,20 +239,28 @@ void codigoSensado(void* parameter) {
     corriente = medirCorriente();
     luz = medirLuz();
     gas1 = medirGas1();
-    gas2 = medirGas2();
-
 
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
 void codigoComunicacion(void* parameter) {
+  mqttClient.setKeepAlive(60);
+  mqttClient.setBufferSize(512);
+
+  unsigned long lastReconnect = 0;
+  unsigned long lastBot = 0;
+
   while (1) {
     if (WiFi.status() != WL_CONNECTED) {
       connectToWifi();
     }
+
     if (!mqttClient.connected()) {
-      connectToMqtt();
+      if (millis() - lastReconnect >= 5000) {
+        lastReconnect = millis();
+        connectToMqtt();
+      }
     }
     mqttClient.loop();
 
@@ -299,23 +307,17 @@ void codigoComunicacion(void* parameter) {
         alertaGas1Enviada = false;
       }
 
-      if (gas2 >= gas2Umbral && !alertaGas2Enviada) {
-        enviarTelegram("ALERTA! GAS 2 ELEVADO: " + String(gas2) + "%");
-        alertaGas2Enviada = true;
-      } else if (gas2 < gas2Umbral - 5.0) {
-        alertaGas2Enviada = false;
-      }
       lastTelegramCheck = millis();
     }
 
-    int nuevosMensajes = bot.getUpdates(bot.last_message_received + 1);
-    while (nuevosMensajes) {
-      handleNewMessages(nuevosMensajes);
-      nuevosMensajes = bot.getUpdates(bot.last_message_received + 1);
+    if (millis() - lastBot >= 3000) {
+      lastBot = millis();
+      int nuevosMensajes = bot.getUpdates(bot.last_message_received + 1);
+      while (nuevosMensajes) {
+        handleNewMessages(nuevosMensajes);
+        nuevosMensajes = bot.getUpdates(bot.last_message_received + 1);
+      }
     }
-
-
-
     now = millis();
     if (now - lastMeasure2 >= interval_leeo) {
       lastMeasure2 = now;
@@ -357,15 +359,11 @@ bool medirPresencia() {
 }
 
 float medirLuz() {
-  return map(analogRead(LDR), 0, 4095, 0, 99);
+  return map(analogRead(LDR), 0, 4095, 0, 100);
 }
 
 float medirGas1() {
-  return map(analogRead(GAS_1), 0, 4095, 0, 99);
-}
-
-float medirGas2() {
-  return map(analogRead(GAS_2), 0, 4095, 0, 99);
+  return map(analogRead(GAS_1), 0, 4095, 0, 100);
 }
 
 void enviarTelegram(String mensaje) {
@@ -383,8 +381,7 @@ void handleNewMessages(int numNewMessages) {
                    + "Presencia: " + (presencia ? "Detectada\n" : "No detectada\n")
                    + "Corriente: " + String(corriente) + " mA\n"
                    + "Luz: " + String(luz) + "%\n"
-                   + "Gas 1: " + String(gas1) + "%\n"
-                   + "Gas 2: " + String(gas2) + "%";
+                   + "Gas 1: " + String(gas1) + "%\n";
       bot.sendMessage(chat_id, msg, "");
     }
   }
@@ -403,10 +400,10 @@ void fun_entra() {
   datos_struct[indice_entra].P1 = presionActual;
   datos_struct[indice_entra].luz = luz;
   datos_struct[indice_entra].G1 = gas1;
-  datos_struct[indice_entra].G2 = gas2;
   datos_struct[indice_entra].cor = corriente;
   datos_struct[indice_entra].pre = presencia;
-  datos_struct[indice_entra].Alarma = (alertaTempEnviada || alertaPresionEnviada || alertaPresenciaEnviada || alertaCorrienteEnviada || alertaLuzEnviada || alertaGas1Enviada || alertaGas2Enviada);
+  datos_struct[indice_entra].oct = 0;  // campo extra en 0
+  datos_struct[indice_entra].Alarma = (alertaTempEnviada || alertaPresionEnviada || alertaPresenciaEnviada || alertaCorrienteEnviada || alertaLuzEnviada || alertaGas1Enviada);
 
   if (indice_entra >= (valor_max_struct - 1)) {
     indice_entra = 0;
@@ -435,20 +432,30 @@ void fun_saca() {
 }
 
 void fun_envio_mqtt() {
+  if (!mqttClient.connected()) {
+    Serial.print("MQTT desconectado, state=");
+    Serial.println(mqttClient.state());
+    return;
+  }
   fun_saca();
   if (flag_vacio == 0) {
-    snprintf(mqtt_payload, sizeof(mqtt_payload),
-             "%d&%ld&%.2f&%.2f&%.2f&%.2f&%.2f&%.2f&%u&%u",
-             name_device, aux2.time, aux2.T1, aux2.P1, aux2.luz,
-             aux2.G1, aux2.G2, aux2.cor, aux2.pre, aux2.Alarma);
 
-    Serial.print("Publish message: ");
+    snprintf(mqtt_payload, sizeof(mqtt_payload),
+             "%d&%ld&%.2f&%.2f&%.2f&%.2f&%.2f&%u&%u&%u",
+             name_device, aux2.time, aux2.T1, aux2.P1, aux2.luz,
+             aux2.G1, aux2.cor, aux2.pre, aux2.oct, aux2.Alarma);
+
+    bool ok = mqttClient.publish(MQTT_PUB, mqtt_payload);
+    Serial.print("Publish ");
+    Serial.print(ok ? "OK: " : "FALLO: ");
     Serial.println(mqtt_payload);
 
-    mqttClient.publish(MQTT_PUB, mqtt_payload);
-    memset(&aux2, 0, sizeof(aux2));
+    if (!ok) {
+      // devolver el dato a la cola para no perderlo
+      indice_saca = (indice_saca == 0) ? valor_max_struct - 1 : indice_saca - 1;
+    }
   } else {
-    Serial.println("No hay valores nuevos en cola");
+    Serial.println("Cola vacia");
   }
 }
 
@@ -514,7 +521,6 @@ void mostrar(Pantalla pantalla) {
 
     case PANTALLA_2:
       printLinea(0, "Gas 1: " + String(gas1) + "%");
-      printLinea(1, "Gas 2: " + String(gas2) + "%");
       break;
 
     case PANTALLA_3:
